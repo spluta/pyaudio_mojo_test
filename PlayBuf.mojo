@@ -1,7 +1,6 @@
 from python import PythonObject
 from python import Python
 from memory import UnsafePointer
-from functions import quadratic_interpolation
 
 alias dtype = DType.float64
 
@@ -11,7 +10,6 @@ struct Buffer(Defaultable, Representable, Movable):
     var sys_sample_rate: Float64  # System sample rate
     var step: Float64  # Step size for reading samples
     var data: UnsafePointer[SIMD[dtype, 1]]  # Pointer to the sound data, e.g., a NumPy array
-    var py_data: PythonObject  # Placeholder for Python data object
     var scipy: PythonObject # Placeholder for SciPy or similar library
     var np: PythonObject  # Placeholder for NumPy or similar library
     var index: Float64  # Index for reading sound file data
@@ -19,7 +17,6 @@ struct Buffer(Defaultable, Representable, Movable):
     
     fn __init__(out self):
         self.data = UnsafePointer[SIMD[dtype, 1]]()
-        self.py_data = PythonObject(None)  # Placeholder for Python data object
         self.index = 0.0
         self.size = 0.0
         self.step = 1.0  # Step size for reading samples
@@ -46,7 +43,7 @@ struct Buffer(Defaultable, Representable, Movable):
     fn __repr__(self) -> String:
         return String("Synth")
 
-    fn quadratic_interp_loc(self, idx: Int64, idx1: Int64, idx2: Int64) -> Float64:
+    fn quadratic_interp(self, idx: Int64, idx1: Int64, idx2: Int64) -> Float64:
         # Ensure indices are within bounds
         var mod_idx = idx % (Int64(self.size) * self.channels)
         var mod_idx1 = idx1 % (Int64(self.size) * self.channels)
@@ -60,33 +57,35 @@ struct Buffer(Defaultable, Representable, Movable):
         var y1 = self.data[mod_idx1]
         var y2 = self.data[mod_idx2]
 
-        return quadratic_interpolation(y0, y1, y2, frac)
+        # Quadratic interpolation coefficients
+        var a = 0.5 * (y0 - 2.0 * y1 + y2)
+        var b = 0.5 * (y2 - y0)
+        var c = y1
 
-    fn next(mut self) -> List[Float64]:
+        # Calculate interpolated value with frac in range [0,1]
+        return a * frac * frac + b * frac + c 
+
+    fn next(mut self) -> InlineArray[Float64, 2]:
         if self.index < self.size:
             self.index += self.step
             if self.index >= self.size:
                 self.index = self.index - self.size  # Reset index if it exceeds size
-        var out = List[Float64]()  # Initialize output list
-        
-        # Pre-populate list with zeros
-        for _ in range(2):
-            out.append(0.0)
-            
+        var out = InlineArray[Float64, 2](0.0, 0.0)  # Initialize output array for stereo
+
         var idx = Int64(self.index) * self.channels  # Calculate the index for interleaved data
 
         for i in range(min(self.channels, 2)):  # Handle up to 2 channels (for stereo output)
-            out[i] = self.quadratic_interp_loc(idx + i, idx + i + self.channels, idx + i + (self.channels*2))  # Channel i
+            out[i] = self.quadratic_interp(idx + i, idx + i + 2, idx + i + 4)  # Channel i
 
         return out
 
     fn load_file(mut self, filename: String) raises -> PythonObject:
         # using SciPy to read the WAV file
-        # loading this into a struct variable so that it hopefully will not be garbage collected
-        self.py_data = self.scipy.io.wavfile.read(filename)  # Read the WAV file using SciPy
-
-        self.buf_sample_rate = Float64(self.py_data[0])  # Sample rate is the first element of the tuple
-        var data = self.py_data[1]  # Extract the actual sound data from the tuple
+        var temp = self.scipy.io.wavfile.read(filename)  # Read the WAV file using SciPy
+        
+        
+        self.buf_sample_rate = Float64(temp[0])  # Sample rate is the first element of the tuple
+        var data = temp[1]  # Extract the actual sound data from the tuple
         # Convert to float64 if it's not already
         if data.dtype != self.np.float64:
             # If integer type, normalize to [-1.0, 1.0] range
@@ -97,9 +96,6 @@ struct Buffer(Defaultable, Representable, Movable):
         self.size = Float64(len(data))  # Size is the length of the data array
         self.channels = Int64(Float64(data.shape[1]))  # Number of channels is the second dimension of the data array
         print("Channels:", self.channels)  # Print the shape of the data array for debugging
-        # self.channels = Int64(data.shape[1])
-
-        # this returns an interleaved array of floats
         self.data = data.__array_interface__["data"][0].unsafe_get_as_pointer[DType.float64]()
 
         return None

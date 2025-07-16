@@ -3,6 +3,7 @@ from VAMoogLadder import VAMoogLadder
 from Osc import Osc
 from functions import linexp
 from random import random_float64
+from memory import UnsafePointer
 
 struct BufSynth(Defaultable, Representable, Movable):
     var sample_rate: Float64
@@ -31,7 +32,7 @@ struct BufSynth(Defaultable, Representable, Movable):
 
         self.mod.set_sample_rate(self.sample_rate)  # Set the sample rate for the modulator
     
-    fn next(mut self) -> InlineArray[Float64, 2]:
+    fn next(mut self) -> List[Float64]:
         var sample = self.buffer.next()
         var mod_val = self.mod.next()
         for i in range(self.buffer.channels):

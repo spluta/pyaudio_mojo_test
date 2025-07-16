@@ -34,7 +34,7 @@ struct AudioEngine(Defaultable, Representable, Movable):
     var buf_synth: BufSynth  # Instance of BufSynth
     var osc_synth: OscSynth  # Instance of OscSynth
     
-    # var num_oscs: Int64
+
     var sample_rate: Float64
     
     var loc_wire_buffer: UnsafePointer[SIMD[DType.float64, 1]]  # Placeholder for wire buffer
@@ -49,12 +49,16 @@ struct AudioEngine(Defaultable, Representable, Movable):
 
         # it is way more efficient to use an UnsafePointer to write to the wire buffer directly
         self.loc_wire_buffer = UnsafePointer[SIMD[DType.float64, 1]]()  # Placeholder for wire buffer
+        print("AudioEngine initialized with sample rate:", self.sample_rate)
+        
 
     
     @staticmethod
     fn init2(self_: PythonObject, sample_rate: PythonObject) raises -> PythonObject:
         var self0 = self_.downcast_value_ptr[Self]()
         self0[].sample_rate = Float64(sample_rate)
+
+        print("AudioEngine initialized with sample rate:", self0[].sample_rate)
 
         # make sure all the synths are initialized with the sample rate
         self0[].buf_synth.init2(self0[].sample_rate, "Shiverer.wav")  # Load a sound file into the buffer
@@ -76,8 +80,8 @@ struct AudioEngine(Defaultable, Representable, Movable):
         # it returns an interleaved array of float64 values rather than the numpy multidimensional array
         self0[].loc_wire_buffer = wire_buffer.__array_interface__["data"][0].unsafe_get_as_pointer[DType.float64]()
 
-        # iterate over the length of the wire buffer
-        # and fill it with the next samples from the BufSynth and OscSynth
+        # # iterate over the length of the wire buffer
+        # # and fill it with the next samples from the BufSynth and OscSynth
         for i in range(length):
             var sample = self0[].buf_synth.next()
 

@@ -1,44 +1,67 @@
 from math import sin
+from functions import quadratic_interpolation
 
-struct SineBuffer(Representable, Movable, Copyable):
+struct OscBuffer(Representable, Movable, Copyable):
     var buffer: List[Float64]
     var size: Int64
 
-    fn __init__(out self, size: Int64 = 16384):
+    fn __init__(out self, size: Int64 = 16384, type: Int64 = 0):
         self.size = size
         self.buffer = List[Float64]()
+        if type == 0:  # Sine wave
+            self.init_sine(size)
+        elif type == 1:  # Triangle wave
+            self.init_triangle(size)
+        elif type == 2:  # Square wave
+            self.init_square(size)
+        elif type == 3:  # Sawtooth wave
+            self.init_sawtooth(size)
+        else:
+            self.init_sine(size)  # Default to sine wave if type is unknown
+
+    fn init_sine(mut self: OscBuffer, size: Int64):
         for i in range(size):
             self.buffer.append(sin(2.0 * 3.141592653589793 * Float64(i) / Float64(size)))  # Precompute sine values
+    
+    fn init_square(mut self: OscBuffer, size: Int64):
+        for i in range(size):
+            if i < size // 2:
+                self.buffer.append(1.0)  # First half is 1
+            else:
+                self.buffer.append(-1.0)  # Second half is -1
+
+    fn init_sawtooth(mut self: OscBuffer, size: Int64):
+        for i in range(size):
+            self.buffer.append(2.0 * (Float64(i) / Float64(size))
+                            - 0.5)  # Linear ramp from -1 to 1
+    
+    fn init_triangle(mut self: OscBuffer, size: Int64):
+        for i in range(size):
+            if i < size // 2:
+                self.buffer.append(2.0 * (Float64(i) / Float64(size)) - 1.0)  # Ascending part
+            else:
+                self.buffer.append(1.0 - 2.0 * (Float64(i) / Float64(size)))  # Descending part
 
     fn __repr__(self) -> String:
         return String(
             "SinBuffer(size=" + String(self.size) + ")"
         )
 
-    fn quadratic_interp(self, x: Float64) -> Float64:
-        # Get indices for 3 adjacent points
-        var index = Int64(x)
-        var index_prev = (index + self.size - 1) % self.size
-        var index_next = (index + 1) % self.size
-        
+    fn quadratic_interp_loc(self, x: Float64) -> Float64:
+        # Ensure indices are within bounds
+        var mod_idx = Int64(x) % Int64(self.size)
+        var mod_idx1 = (mod_idx + 1) % Int64(self.size)
+        var mod_idx2 = (mod_idx + 2) % Int64(self.size)
+
         # Get the fractional part
-        var frac = x - Float64(index)
-        
+        var frac = x - Float64(Int64(x))
+
         # Get the 3 sample values
-        var y0 = self.buffer[index_prev]
-        var y1 = self.buffer[index]
-        var y2 = self.buffer[index_next]
-        
-        # Quadratic interpolation formula: a*x^2 + b*x + c
-        # where x is between -1 and 1 (centered around the middle point)
-        var a = 0.5 * (y0 - 2.0 * y1 + y2)
-        var b = 0.5 * (y2 - y0)
-        var c = y1
-        
-        # Calculate interpolated value with frac in range [0,1]
-        # Adjusting frac to be in [-1,1] for the formula
-        var x_adj = frac * 2.0 - 1.0
-        return a * x_adj * x_adj + b * x_adj + c
+        var y0 = self.buffer[mod_idx]
+        var y1 = self.buffer[mod_idx1]
+        var y2 = self.buffer[mod_idx2]
+
+        return quadratic_interpolation(y0, y1, y2, frac)
 
     fn lin_interp(self, x: Float64) -> Float64:
         # Get indices for 2 adjacent points
@@ -55,24 +78,22 @@ struct SineBuffer(Representable, Movable, Copyable):
         # Linear interpolation formula: y0 + frac * (y1 - y0)
         return y0 + frac * (y1 - y0)
 
-    fn process(self, f_index: Float64) -> Float64:
+    fn next(self, f_index: Float64) -> Float64:
         var f_index2 = (f_index * Float64(self.size)) % Float64(self.size)
-        # print("f_index: ", f_index2)  # Debugging output
         var value = self.lin_interp(f_index2)
-        # var value = self.cubic_interp(f_index2)
         return value
 
 struct Osc(Representable, Movable, Copyable):
     var phase: Float64
     var freq: Float64
     var freq_mul: Float64 
-    var sine_buffer: SineBuffer
+    var sine_buffer: OscBuffer
 
-    fn __init__(out self, freq: Float64 = 100.0, sample_rate: Float64 = 44100.0):
+    fn __init__(out self, freq: Float64 = 100.0, sample_rate: Float64 = 44100.0, type: Int64 = 0):
         self.phase = 0.0
         self.freq = freq
         self.freq_mul = 1.0 / sample_rate
-        self.sine_buffer = SineBuffer()
+        self.sine_buffer = OscBuffer(16384, type)  # Initialize with a sine wave buffer of size 16384
 
     fn __repr__(self) -> String:
         return String(
@@ -86,4 +107,4 @@ struct Osc(Representable, Movable, Copyable):
         self.phase += (self.freq*self.freq_mul)
         if self.phase >= 1.0:
             self.phase -= 1.0
-        return self.sine_buffer.process(self.phase)
+        return self.sine_buffer.next(self.phase)
