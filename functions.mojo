@@ -40,6 +40,40 @@ fn clip(val: Float64, lo: Float64, hi: Float64) -> Float64:
     else:
         return val
 
+fn wrap(value: Float64, min_val: Float64, max_val: Float64) -> Float64:
+    """Wraps a value around a specified range.
+    Args:
+        value: The value to wrap
+        min_val: The minimum of the range
+        max_val: The maximum of the range
+    Returns:
+        The wrapped value within the range [min_val, max_val]
+    """
+    var range_size = max_val - min_val
+    if range_size <= 0:
+        return min_val  # If the range is invalid, return the minimum value
+    var wrapped_value = (value - min_val) % range_size + min_val
+    if wrapped_value < min_val:
+        wrapped_value += range_size  # Ensure the value is within the range
+    return wrapped_value
+
+fn wrap(value: Int, min_val: Int, max_val: Int) -> Int:
+    """Wraps a value around a specified range.
+    Args:
+        value: The value to wrap
+        min_val: The minimum of the range
+        max_val: The maximum of the range
+    Returns:
+        The wrapped value within the range [min_val, max_val]
+    """
+    var range_size = max_val - min_val
+    if range_size <= 0:
+        return min_val  # If the range is invalid, return the minimum value
+    var wrapped_value = (value - min_val) % range_size + min_val
+    if wrapped_value < min_val:
+        wrapped_value += range_size  # Ensure the value is within the range
+    return wrapped_value
+
 fn quadratic_interpolation(y0: Float64, y1: Float64, y2: Float64, x: Float64) -> Float64:
     """Performs quadratic interpolation between three points.
     
@@ -60,10 +94,3 @@ fn quadratic_interpolation(y0: Float64, y1: Float64, y2: Float64, x: Float64) ->
     # Return the estimated value
     return a + b + c
 
-    # # Quadratic interpolation coefficients
-    # var a = 0.5 * (y0 - 2.0 * y1 + y2)
-    # var b = 0.5 * (y2 - y0)
-    # var c = y1
-
-    # # Calculate interpolated value with frac in range [0,1]
-    # return a * frac * frac + b * frac + c 

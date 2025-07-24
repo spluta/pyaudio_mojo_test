@@ -2,31 +2,25 @@ from python import PythonObject
 from python import Python
 from memory import UnsafePointer
 from functions import quadratic_interpolation
+from World import World
 
 alias dtype = DType.float64
 
-struct Buffer(Defaultable, Representable, Movable):
-    var size: Float64  # Size of the buffer
+struct Buffer(Representable, Movable):
+    var num_frames: Float64  # num_frames of the buffer
     var buf_sample_rate: Float64  # Sample rate for the buffer
     var sys_sample_rate: Float64  # System sample rate
-    var step: Float64  # Step size for reading samples
+    var step: Float64  
     var data: UnsafePointer[SIMD[dtype, 1]]  # Pointer to the sound data, e.g., a NumPy array
     var py_data: PythonObject  # Placeholder for Python data object
     var scipy: PythonObject # Placeholder for SciPy or similar library
     var np: PythonObject  # Placeholder for NumPy or similar library
     var index: Float64  # Index for reading sound file data
-    var channels: Int64  # Number of channels
-    
-    fn __init__(out self):
-        self.data = UnsafePointer[SIMD[dtype, 1]]()
-        self.py_data = PythonObject(None)  # Placeholder for Python data object
-        self.index = 0.0
-        self.size = 0.0
-        self.step = 1.0  # Step size for reading samples
-        self.buf_sample_rate = 44100.0  # Default sample rate
-        self.sys_sample_rate = 44100.0  # Default system sample rate
-        self.channels = 2  # Default number of channels (e.g., stereo)
+    var num_chans: Int64  # Number of channels
 
+
+    fn __init__(out self, world: World, filename: String = ""):
+        # load the necessary Python modules
         try:
             self.scipy = Python.import_module("scipy")
         except:
@@ -38,47 +32,29 @@ struct Buffer(Defaultable, Representable, Movable):
             print("Warning: Failed to import NumPy module")
             self.np = PythonObject(None)
 
-    fn set_sys_sample_rate(mut self, sample_rate: Float64):
-        self.sys_sample_rate = sample_rate
-        self.step = self.buf_sample_rate / self.sys_sample_rate  # Update step based on system sample rate
-        print(self.step)
+        self.data = UnsafePointer[SIMD[dtype, 1]]()
+        self.py_data = PythonObject(None)  # Placeholder for Python data object
+        self.index = 0.0
+        self.num_frames = 0.0  # Initialize num_frames
+        self.buf_sample_rate = 48000.0  # Default sample rate if loading fails
 
-    fn __repr__(self) -> String:
-        return String("Synth")
+        self.sys_sample_rate = world.sample_rate  # system sample rate
+        self.step = (self.buf_sample_rate / self.sys_sample_rate) / self.buf_sample_rate
+        self.num_chans = 0  # Default number of channels (e.g., stereo)
 
-    fn quadratic_interp_loc(self, idx: Int64, idx1: Int64, idx2: Int64) -> Float64:
-        # Ensure indices are within bounds
-        var mod_idx = idx % (Int64(self.size) * self.channels)
-        var mod_idx1 = idx1 % (Int64(self.size) * self.channels)
-        var mod_idx2 = idx2 % (Int64(self.size) * self.channels)
+        if filename != "":
+            # Load the file if a filename is provided
+            try:
+                self.load_file(filename)
+                print("Buffer initialized with file:", filename)  # Print the filename for debugging
+            except:
+                print("Error loading file:")
+                self.num_frames = 0.0
+                self.num_chans = 0
+        else:
+            self.num_frames = 0.0
+            self.buf_sample_rate = 48000.0  # Default sample rate
 
-        # Get the fractional part
-        var frac = self.index - Float64(Int64(self.index))
-
-        # Get the 3 sample values
-        var y0 = self.data[mod_idx]
-        var y1 = self.data[mod_idx1]
-        var y2 = self.data[mod_idx2]
-
-        return quadratic_interpolation(y0, y1, y2, frac)
-
-    fn next(mut self) -> List[Float64]:
-        if self.index < self.size:
-            self.index += self.step
-            if self.index >= self.size:
-                self.index = self.index - self.size  # Reset index if it exceeds size
-        var out = List[Float64]()  # Initialize output list
-        
-        # Pre-populate list with zeros
-        for _ in range(2):
-            out.append(0.0)
-            
-        var idx = Int64(self.index) * self.channels  # Calculate the index for interleaved data
-
-        for i in range(min(self.channels, 2)):  # Handle up to 2 channels (for stereo output)
-            out[i] = self.quadratic_interp_loc(idx + i, idx + i + self.channels, idx + i + (self.channels*2))  # Channel i
-
-        return out
 
     fn load_file(mut self, filename: String) raises -> PythonObject:
         # using SciPy to read the WAV file
@@ -86,6 +62,14 @@ struct Buffer(Defaultable, Representable, Movable):
         self.py_data = self.scipy.io.wavfile.read(filename)  # Read the WAV file using SciPy
 
         self.buf_sample_rate = Float64(self.py_data[0])  # Sample rate is the first element of the tuple
+
+        self.num_frames = Float64(len(self.py_data[1]))  # num_frames is the length of the data array
+        self.num_chans = Int64(Float64(self.py_data[1].shape[1]))  # Number of num_chans is the second dimension of the data array
+        
+        print("num_chans:", self.num_chans, "num_frames:", self.num_frames)  # Print the shape of the data array for debugging
+
+        self.step = (self.buf_sample_rate / self.sys_sample_rate) / self.num_frames  # Update step based on system sample rate
+
         var data = self.py_data[1]  # Extract the actual sound data from the tuple
         # Convert to float64 if it's not already
         if data.dtype != self.np.float64:
@@ -94,12 +78,51 @@ struct Buffer(Defaultable, Representable, Movable):
                 data = data.astype(self.np.float64) / self.np.iinfo(data.dtype).max
             else:
                 data = data.astype(self.np.float64)
-        self.size = Float64(len(data))  # Size is the length of the data array
-        self.channels = Int64(Float64(data.shape[1]))  # Number of channels is the second dimension of the data array
-        print("Channels:", self.channels)  # Print the shape of the data array for debugging
-        # self.channels = Int64(data.shape[1])
-
-        # this returns an interleaved array of floats
+        
+        # this returns a pointer to an interleaved array of floats
         self.data = data.__array_interface__["data"][0].unsafe_get_as_pointer[DType.float64]()
+        # print(len(self.data), "samples loaded from file:", filename)  # Print the number of samples loaded for debugging
 
         return None
+
+
+    fn __repr__(self) -> String:
+        return String("Synth")
+
+    fn quadratic_interp_loc(self, idx: Int64, idx1: Int64, idx2: Int64, frac: Float64) -> Float64:
+        # Ensure indices are within bounds
+        var mod_idx = idx % (Int64(self.num_frames) * self.num_chans)
+        var mod_idx1 = idx1 % (Int64(self.num_frames) * self.num_chans)
+        var mod_idx2 = idx2 % (Int64(self.num_frames) * self.num_chans)
+
+        # Get the 3 sample values
+        var y0 = self.data[mod_idx]
+        var y1 = self.data[mod_idx1]
+        var y2 = self.data[mod_idx2]
+
+        return quadratic_interpolation(y0, y1, y2, frac)
+
+    fn linear_interp_loc(self, idx: Int64, idx1: Int64, frac: Float64) -> Float64:
+        # Ensure indices are within bounds
+        var mod_idx = idx % (Int64(self.num_frames) * self.num_chans)
+        var mod_idx1 = idx1 % (Int64(self.num_frames) * self.num_chans)
+
+        # Get the 2 sample values
+        var y0 = self.data[mod_idx]
+        var y1 = self.data[mod_idx1]
+        return y0 + frac * (y1 - y0)  # Linear interpolation between
+
+    fn next(mut self, chan: Int64, phase: Float64, interp: Int64 = 0) -> Float64:
+        if self.num_frames == 0 or self.num_chans == 0:
+            return 0.0  # Return zero if no frames or channels are available
+        var f_idx = phase * self.num_frames
+        var frac = f_idx - Float64(Int64(f_idx))
+
+        var idx = Int64(f_idx) * self.num_chans + chan
+
+        if interp == 0:
+            return self.linear_interp_loc(idx, idx + self.num_chans, frac)  # Linear interpolation between two samples
+        elif interp == 1:
+            return self.quadratic_interp_loc(idx, (idx + self.num_chans), (idx + (2 * self.num_chans)), frac)  # Interpolate between three samples
+        else:
+            return self.linear_interp_loc(idx, (idx + self.num_chans), frac)  # default is linear interpolation

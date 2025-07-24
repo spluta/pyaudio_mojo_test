@@ -1,5 +1,6 @@
 from math import tan, pi, tanh
 from functions import clip
+from World import World
 
 struct VAMoogLadder(Representable, Movable, Copyable):
     var nyquist: Float64
@@ -9,17 +10,14 @@ struct VAMoogLadder(Representable, Movable, Copyable):
     var last_3: Float64
     var last_4: Float64
 
-    fn __init__(out self, freq: Float64 = 100.0, sample_rate: Float64 = 44100.0):
-        self.nyquist = sample_rate * 0.5
-        self.step_val = 1.0 / sample_rate
+    fn __init__(out self, world: World, freq: Float64 = 100.0):
+        self.nyquist = world.sample_rate * 0.5
+        self.step_val = 1.0 / world.sample_rate
         self.last_1 = 0.0
         self.last_2 = 0.0
         self.last_3 = 0.0
         self.last_4 = 0.0
-    
-    fn set_sample_rate(mut self, sample_rate: Float64):
-        self.step_val = 1.0 / sample_rate
-    
+
     fn __repr__(self) -> String:
         return String(
             "VAMoogLadder"

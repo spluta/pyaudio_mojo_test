@@ -29,7 +29,7 @@ wire_buffer = np.zeros((blocksize, channels), dtype=np.float64)
 
 # Initialize the Mojo module AudioEngine
 mojo_audio_engine = mojo_module.AudioEngine()
-mojo_audio_engine.init2(sample_rate)  # Initialize the mojo_audio_engine with the sample rate
+# mojo_audio_engine.init2(sample_rate)  # Initialize the mojo_audio_engine with the sample rate
 
 # Define callback for playback
 def callback(in_data, frame_count, time_info, status):
